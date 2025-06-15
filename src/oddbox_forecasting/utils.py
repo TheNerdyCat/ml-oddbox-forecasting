@@ -24,3 +24,14 @@ def validate_weekly_structure(df: pd.DataFrame) -> bool:
     """Ensure each week has exactly 8 rows (1 per box type)."""
     rows_per_week = df.groupby("week").size()
     return all(rows_per_week == 8)
+
+
+def lagged_correlation(
+    df: pd.DataFrame, target_col: str, predictor_col: str, max_lag: int = 2
+) -> dict:
+    results = {}
+    for lag in range(max_lag + 1):
+        shifted = df[predictor_col].shift(lag)
+        corr = df[target_col].corr(shifted)
+        results[f"lag_{lag}"] = corr
+    return results
