@@ -1,0 +1,29 @@
+[tool.poetry]
+name = "oddbox-forecasting"
+version = "0.1.0"
+description = "Forecasting system for Oddbox box orders based on historical subscription data"
+authors = ["Edward Sims <edwardsims30@yahoo.com>"]
+license = "MIT"
+readme = "README.md"
+packages = [{ include = "oddbox_forecasting", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pandas = "^2.3.0"
+numpy = "^2.3.0"
+scipy = "^1.15.3"
+seaborn = "^0.13.2"
+matplotlib = "^3.10.3"
+xgboost = "^3.0.2"
+lightgbm = "^4.6.0"
+scikit-learn = "^1.7.0"
+statsmodels = "^0.14.4"
+
+[tool.poetry.dev-dependencies]
+pytest = "^8.0"
+black = "^24.3"
+isort = "^5.13"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
