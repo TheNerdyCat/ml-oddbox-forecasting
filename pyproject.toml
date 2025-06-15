@@ -24,6 +24,9 @@ pytest = "^8.0"
 black = "^24.3"
 isort = "^5.13"
 
+[tool.poetry.group.dev.dependencies]
+ipykernel = "^6.29.5"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
