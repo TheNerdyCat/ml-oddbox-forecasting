@@ -38,3 +38,15 @@ def add_event_flags(df: pd.DataFrame) -> pd.DataFrame:
         "holiday_week"
     ].astype(int)
     return df
+
+
+def add_event_interaction_features(df: pd.DataFrame) -> pd.DataFrame:
+    df["is_marketing_week"] = df["is_marketing_week"].astype(int)
+    df["holiday_week"] = df["holiday_week"].astype(int)
+
+    df["marketing_x_box"] = (
+        df["box_type"] + "_MKT_" + df["is_marketing_week"].astype(str)
+    )
+    df["holiday_x_box"] = df["box_type"] + "_HOL_" + df["holiday_week"].astype(str)
+
+    return df

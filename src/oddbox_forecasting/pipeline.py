@@ -11,6 +11,7 @@ from oddbox_forecasting.features import (
     add_rolling_box_stats,
     add_event_flags,
     add_cyclic_week_features,
+    add_event_interaction_features,
 )
 from oddbox_forecasting.utils import (
     impute_missing_fortnightly,
@@ -36,6 +37,7 @@ def load_and_prepare(path: str) -> pd.DataFrame:
     df = add_rolling_box_stats(df, window=ROLLING_WINDOW)
     df = add_event_flags(df)
     df = add_cyclic_week_features(df)
+    df = add_event_interaction_features(df)
 
     # Output to processed directory with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
