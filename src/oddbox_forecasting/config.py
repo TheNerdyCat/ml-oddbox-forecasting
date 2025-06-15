@@ -9,3 +9,5 @@ WEEK_CYCLE_PERIOD = 52
 
 # Date format for parsing (if needed in CLI or string conversion)
 DATE_FORMAT = "%Y-%m-%d"
+
+ROLLING_WINDOW = 3
