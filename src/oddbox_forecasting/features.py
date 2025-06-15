@@ -50,3 +50,11 @@ def add_event_interaction_features(df: pd.DataFrame) -> pd.DataFrame:
     df["holiday_x_box"] = df["box_type"] + "_HOL_" + df["holiday_week"].astype(str)
 
     return df
+
+
+def add_rolling_volatility(df: pd.DataFrame, window: int = 3) -> pd.DataFrame:
+    """Adds a rolling std deviation feature of box_orders per box type."""
+    df["box_orders_volatility"] = df.groupby("box_type")["box_orders"].transform(
+        lambda x: x.rolling(window).std()
+    )
+    return df

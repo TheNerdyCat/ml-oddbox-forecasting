@@ -2,6 +2,7 @@ import pandas as pd
 from oddbox_forecasting.features import (
     add_box_order_lags,
     add_event_interaction_features,
+    add_rolling_volatility,
 )
 
 
@@ -24,3 +25,10 @@ def test_add_event_interaction_features():
     assert "marketing_x_box" in df.columns
     assert "holiday_x_box" in df.columns
     assert df.loc[0, "marketing_x_box"] == "A_MKT_1"
+
+
+def test_add_rolling_volatility():
+    df = pd.DataFrame({"box_type": ["A"] * 5, "box_orders": [10, 20, 30, 40, 50]})
+    result = add_rolling_volatility(df, window=3)
+    assert "box_orders_volatility" in result.columns
+    assert result["box_orders_volatility"].isnull().sum() >= 2  # due to window size
