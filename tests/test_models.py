@@ -40,7 +40,7 @@ def test_train_total_model_runs():
             "week_cos": [0.9] * 8,
         }
     )
-    model = train_total_model(df)
+    model, _, _ = train_total_model(df)
     assert hasattr(model, "predict")
 
 
@@ -65,7 +65,7 @@ def test_compute_metrics_shape():
 def test_calculate_event_uplift_shape():
     df = pd.DataFrame(
         {
-            "box_type": ["A"] * 10 + ["B"] * 10,
+            "box_type": ["LFV"] * 10 + ["MV"] * 10,
             "box_orders": [100] * 5 + [120] * 5 + [90] * 5 + [85] * 5,
             "is_marketing_week": [0] * 5 + [1] * 5 + [0] * 5 + [1] * 5,
             "holiday_week": [0] * 10 + [0] * 5 + [1] * 5,
@@ -89,5 +89,5 @@ def test_apply_adjustment_layer_modifies_rows():
         [{"box_type": "A", "event_type": "marketing", "uplift": 0.1}]
     )
     out = apply_adjustment_layer(df, uplift_df)
-    assert out.loc[0, "adjusted_prediction"] == 110.0
+    assert abs(out.loc[0, "adjusted_prediction"] - 110.0) < 1e-6
     assert out.loc[1, "adjusted_prediction"] == 100.0

@@ -1,5 +1,6 @@
 import pandas as pd
 from pathlib import Path
+import pytest
 from oddbox_forecasting.config import TEST_NAME, FORECAST_HORIZON
 from oddbox_forecasting.pipeline import load_and_prepare, run_demand_forecast_pipeline
 from visuals.plots.evaluation import (
@@ -8,7 +9,16 @@ from visuals.plots.evaluation import (
 )
 
 
+def run_tests():
+    print("Running tests...")
+    exit_code = pytest.main(["tests", "-v"])
+    if exit_code != 0:
+        raise RuntimeError("Tests failed.")
+    print("Tests passed.\n")
+
+
 def main():
+    run_tests()
     # Load and process raw data
     raw_path = Path("data/raw/data.csv")
     forecasts_dir = Path("forecasts")
