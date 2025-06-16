@@ -1,4 +1,9 @@
-from oddbox_forecasting.models import run_baseline_forecasts
+from oddbox_forecasting.models import (
+    run_baseline_forecasts,
+    train_total_model,
+    train_share_models,
+    compute_metrics,
+)
 import pandas as pd
 
 
@@ -14,3 +19,41 @@ def test_run_baseline_forecasts():
     assert "A" in result
     assert "rolling_forecast" in result["A"]
     assert len(result["A"]["rolling_forecast"]) == 4
+
+
+def test_train_total_model_runs():
+    df = pd.DataFrame(
+        {
+            "week": pd.date_range("2024-01-01", periods=8),
+            "total_orders": range(100, 108),
+            "weekly_subscribers": range(200, 208),
+            "fortnightly_subscribers": range(50, 58),
+            "weekly_subscribers_lag_1": range(195, 203),
+            "weekly_subscribers_lag_2": range(190, 198),
+            "is_marketing_week": [0, 1] * 4,
+            "holiday_week": [0, 0] * 4,
+            "is_event_week": [0] * 8,
+            "week_sin": [0.1] * 8,
+            "week_cos": [0.9] * 8,
+        }
+    )
+    model = train_total_model(df)
+    assert hasattr(model, "predict")
+
+
+def test_compute_metrics_shape():
+    df = pd.DataFrame(
+        {
+            "box_type": ["A"] * 4,
+            "box_orders": [100, 110, 105, 108],
+            "predicted_box_orders": [98, 112, 107, 109],
+            "rolling_baseline": [95, 107, 103, 110],
+        }
+    )
+    df["squared_error"] = (df["box_orders"] - df["predicted_box_orders"]) ** 2
+    df["abs_error"] = (df["box_orders"] - df["predicted_box_orders"]).abs()
+    df["baseline_squared_error"] = (df["box_orders"] - df["rolling_baseline"]) ** 2
+    df["baseline_abs_error"] = (df["box_orders"] - df["rolling_baseline"]).abs()
+
+    metrics = compute_metrics(df, split_label="test")
+    assert "rmse" in metrics.columns

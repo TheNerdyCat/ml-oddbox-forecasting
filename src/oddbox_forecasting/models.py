@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 from sklearn.metrics import mean_squared_error, mean_absolute_error
+import lightgbm as lgb
+from oddbox_forecasting.config import BOX_TYPES
 
 
 def run_baseline_forecasts(
@@ -46,3 +48,90 @@ def run_baseline_forecasts(
         }
 
     return results
+
+
+def train_total_model(df_total_train: pd.DataFrame) -> lgb.LGBMRegressor:
+    X = df_total_train.drop(columns=["week", "total_orders"])
+    y = df_total_train["total_orders"]
+    model = lgb.LGBMRegressor(n_estimators=100, random_state=42)
+    model.fit(X, y)
+    return model
+
+
+def train_share_models(df_model_train: pd.DataFrame, share_features: list[str]) -> dict:
+    models = {}
+    for box in BOX_TYPES:
+        df_box = df_model_train[df_model_train["box_type"] == box].dropna(
+            subset=["box_share"] + share_features
+        )
+        X = df_box[share_features]
+        y = df_box["box_share"]
+        model = lgb.LGBMRegressor(n_estimators=100, random_state=42)
+        model.fit(X, y)
+        models[box] = {
+            "model": model,
+            "train_rows": len(X),
+            "train_weeks": df_box["week"].nunique(),
+        }
+    return models
+
+
+def evaluate_share_model(
+    df_model: pd.DataFrame,
+    df_total: pd.DataFrame,
+    share_models: dict,
+    share_features: list[str],
+    holdout_weeks: pd.Series,
+) -> pd.DataFrame:
+    df_model = df_model.copy()
+    df_model["total_pred"] = df_model["week"].map(
+        df_total.set_index("week")["total_pred"]
+    )
+    all_preds = []
+    for box in BOX_TYPES:
+        df_box = df_model[df_model["box_type"] == box].dropna(
+            subset=share_features + ["box_orders", "total_pred"]
+        )
+        model = share_models[box]["model"]
+        df_box = df_box.sort_values("week")
+        X = df_box[share_features]
+        df_box["predicted_share"] = model.predict(X)
+        df_box["predicted_box_orders"] = (
+            df_box["predicted_share"] * df_box["total_pred"]
+        )
+
+        # Baseline
+        df_box["rolling_baseline"] = (
+            df_box["box_orders"].shift(1).rolling(window=3).mean()
+        )
+
+        df_box["squared_error"] = (
+            df_box["box_orders"] - df_box["predicted_box_orders"]
+        ) ** 2
+        df_box["abs_error"] = (
+            df_box["box_orders"] - df_box["predicted_box_orders"]
+        ).abs()
+        df_box["baseline_squared_error"] = (
+            df_box["box_orders"] - df_box["rolling_baseline"]
+        ) ** 2
+        df_box["baseline_abs_error"] = (
+            df_box["box_orders"] - df_box["rolling_baseline"]
+        ).abs()
+
+        all_preds.append(df_box)
+    return pd.concat(all_preds)
+
+
+def compute_metrics(df: pd.DataFrame, split_label: str) -> pd.DataFrame:
+    return (
+        df.groupby("box_type")
+        .agg(
+            rmse=("squared_error", lambda x: np.sqrt(np.mean(x))),
+            mae=("abs_error", "mean"),
+            rmse_baseline=("baseline_squared_error", lambda x: np.sqrt(np.mean(x))),
+            mae_baseline=("baseline_abs_error", "mean"),
+            mean_actual=("box_orders", "mean"),
+        )
+        .assign(mape=lambda d: 100 * d["mae"] / d["mean_actual"], split=split_label)
+        .reset_index()
+    )
