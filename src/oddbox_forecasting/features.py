@@ -58,3 +58,33 @@ def add_rolling_volatility(df: pd.DataFrame, window: int = 3) -> pd.DataFrame:
         lambda x: x.rolling(window).std()
     )
     return df
+
+
+def get_model_features(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
+    """Prepares X, y for modeling from cleaned dataframe."""
+    feature_cols = [
+        "weekly_subscribers",
+        "fortnightly_subscribers",
+        "weekly_subscribers_lag_1",
+        "weekly_subscribers_lag_2",
+        "box_orders_lag_1",
+        "box_orders_lag_2",
+        "box_orders_rollmean",
+        "box_orders_rollstd",
+        "box_orders_volatility",
+        "week_sin",
+        "week_cos",
+        "is_marketing_week",
+        "holiday_week",
+        "is_event_week",
+        "marketing_x_box",
+        "holiday_x_box",
+    ]
+
+    missing = [col for col in feature_cols if col not in df.columns]
+    if missing:
+        raise ValueError(f"Missing expected features: {missing}")
+
+    X = df[feature_cols].copy()
+    y = df["box_orders"].copy()
+    return X, y

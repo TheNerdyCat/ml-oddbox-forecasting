@@ -35,3 +35,13 @@ def lagged_correlation(
         corr = df[target_col].corr(shifted)
         results[f"lag_{lag}"] = corr
     return results
+
+
+def get_box_type_splits(
+    df: pd.DataFrame, feature_cols: list[str], target_col: str
+) -> dict:
+    """Returns dict of DataFrames split by box_type with only valid rows."""
+    return {
+        box: group.dropna(subset=feature_cols + [target_col])
+        for box, group in df.groupby("box_type")
+    }
