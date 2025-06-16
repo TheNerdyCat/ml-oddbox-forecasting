@@ -8,7 +8,21 @@ from oddbox_forecasting.config import BOX_TYPES
 def run_baseline_forecasts(
     df: pd.DataFrame, forecast_horizon: int = 4, rolling_window: int = 3
 ) -> dict:
-    """Generate rolling average and seasonal naive forecasts per box_type."""
+    """
+    Generate baseline forecasts using rolling mean and seasonal naive methods.
+
+    Computes forecasts for each box_type using:
+      - A rolling average of the last few weeks.
+      - A seasonal naive forecast (same week one year ago), if available.
+
+    Parameters:
+        df (pd.DataFrame): Input DataFrame containing 'box_orders' and 'box_type'.
+        forecast_horizon (int): Number of weeks to forecast (default is 4).
+        rolling_window (int): Number of weeks to use for the rolling average (default is 3).
+
+    Returns:
+        dict: Dictionary with forecasts and error metrics for each box_type.
+    """
     results = {}
 
     for box, group in df.groupby("box_type"):
@@ -53,6 +67,18 @@ def run_baseline_forecasts(
 def train_total_model(
     df_total_train: pd.DataFrame,
 ) -> tuple[lgb.LGBMRegressor, np.ndarray]:
+    """
+    Train a LightGBM model to predict total weekly orders.
+
+    Parameters:
+        df_total_train (pd.DataFrame): Aggregated weekly data excluding holdout weeks.
+
+    Returns:
+        tuple:
+            - lgb.LGBMRegressor: Trained model.
+            - np.ndarray: Feature importances from the model.
+            - list[str]: List of input feature names used.
+    """
     X = df_total_train.drop(columns=["week", "total_orders"])
     y = df_total_train["total_orders"]
     model = lgb.LGBMRegressor(n_estimators=100, random_state=42)
@@ -61,6 +87,16 @@ def train_total_model(
 
 
 def train_share_models(df_model_train: pd.DataFrame, share_features: list[str]) -> dict:
+    """
+    Train a separate LightGBM model to predict box share for each box type.
+
+    Parameters:
+        df_model_train (pd.DataFrame): Training data with box-level features.
+        share_features (list[str]): List of features to use in the share models.
+
+    Returns:
+        dict: Dictionary mapping box_type to trained model and metadata.
+    """
     models = {}
     for box in BOX_TYPES:
         df_box = df_model_train[df_model_train["box_type"] == box].dropna(
@@ -86,6 +122,22 @@ def evaluate_share_model(
     share_features: list[str],
     holdout_weeks: pd.Series,
 ) -> pd.DataFrame:
+    """
+    Generate box-level forecasts from share models and compute prediction errors.
+
+    Applies trained share models to predict box shares and reconstruct box-level
+    demand forecasts. Also computes baseline forecasts and error metrics.
+
+    Parameters:
+        df_model (pd.DataFrame): Box-level feature data.
+        df_total (pd.DataFrame): Total volume predictions by week.
+        share_models (dict): Dictionary of trained share models.
+        share_features (list[str]): Features to use for predictions.
+        holdout_weeks (pd.Series): Weeks excluded from training (for validation).
+
+    Returns:
+        pd.DataFrame: DataFrame with predictions, baselines, and error metrics.
+    """
     df_model = df_model.copy()
     df_model["total_pred"] = df_model["week"].map(
         df_total.set_index("week")["total_pred"]
@@ -126,6 +178,16 @@ def evaluate_share_model(
 
 
 def compute_metrics(df: pd.DataFrame, split_label: str) -> pd.DataFrame:
+    """
+    Compute RMSE, MAE, and MAPE for model and baseline forecasts.
+
+    Parameters:
+        df (pd.DataFrame): DataFrame containing forecast results.
+        split_label (str): Label to tag the split (e.g., 'train', 'test').
+
+    Returns:
+        pd.DataFrame: Aggregated error metrics by box_type and split.
+    """
     return (
         df.groupby("box_type")
         .agg(
@@ -141,7 +203,18 @@ def compute_metrics(df: pd.DataFrame, split_label: str) -> pd.DataFrame:
 
 
 def calculate_event_uplift(df: pd.DataFrame) -> pd.DataFrame:
-    """Estimate % uplift or dampening effect from events by box_type."""
+    """
+    Estimate average uplift or reduction in demand due to event weeks.
+
+    Compares box_orders between event and non-event weeks for each box type
+    to estimate the relative effect size.
+
+    Parameters:
+        df (pd.DataFrame): DataFrame with box_orders and event flags.
+
+    Returns:
+        pd.DataFrame: Uplift values by box_type and event_type.
+    """
     impacts = []
 
     for box in BOX_TYPES:
@@ -162,7 +235,18 @@ def calculate_event_uplift(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def apply_adjustment_layer(df: pd.DataFrame, uplift_df: pd.DataFrame) -> pd.DataFrame:
-    """Apply learned uplift/dampening adjustments to predicted_box_orders."""
+    """
+    Adjust forecasted box orders based on estimated event uplifts.
+
+    Applies percentage-based corrections to forecasts where event conditions match.
+
+    Parameters:
+        df (pd.DataFrame): Forecast results with predicted_box_orders.
+        uplift_df (pd.DataFrame): Uplift multipliers by box_type and event_type.
+
+    Returns:
+        pd.DataFrame: DataFrame with added 'adjusted_prediction' column.
+    """
     df = df.copy()
 
     for _, row in uplift_df.iterrows():
@@ -185,7 +269,16 @@ def apply_adjustment_layer(df: pd.DataFrame, uplift_df: pd.DataFrame) -> pd.Data
 
 
 def compute_adjusted_metrics(df: pd.DataFrame, split_label: str) -> pd.DataFrame:
-    """Return RMSE/MAE for adjusted vs raw forecasts."""
+    """
+    Compute RMSE, MAE, and MAPE for adjusted forecasts compared to raw and baseline.
+
+    Parameters:
+        df (pd.DataFrame): DataFrame with actuals, predictions, and adjustment errors.
+        split_label (str): Label to tag the evaluation split.
+
+    Returns:
+        pd.DataFrame: Evaluation metrics by box_type for adjusted forecasts.
+    """
     return (
         df.groupby("box_type")
         .agg(

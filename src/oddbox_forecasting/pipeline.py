@@ -37,7 +37,22 @@ from oddbox_forecasting.models import (
 
 
 def load_and_prepare(path: str) -> pd.DataFrame:
-    """Complete raw -> clean dataframe step and export processed data."""
+    """
+    Load raw Oddbox data and apply cleaning and feature engineering steps.
+
+    This includes:
+      - Parsing raw columns and fixing known typos.
+      - Imputing missing fortnightly subscriber values.
+      - Validating structure (one row per box type per week).
+      - Adding lag features, rolling stats, cyclic encodings, and interaction terms.
+      - Saving processed dataset to disk.
+
+    Parameters:
+        path (str): File path to the raw data CSV.
+
+    Returns:
+        pd.DataFrame: Cleaned and feature-enriched dataset ready for modeling.
+    """
     df = load_raw_data(path)
     df = impute_missing_fortnightly(df)
 
@@ -66,6 +81,27 @@ def load_and_prepare(path: str) -> pd.DataFrame:
 
 
 def run_demand_forecast_pipeline(df_model: pd.DataFrame) -> pd.DataFrame:
+    """
+    End-to-end pipeline for training, predicting, and evaluating Oddbox demand forecasts.
+
+    Steps:
+      - Aggregates total orders and computes box share.
+      - Trains total volume and share models (per box_type).
+      - Makes predictions and computes evaluation metrics.
+      - Applies adjustment layer based on event uplift analysis.
+      - Returns raw and adjusted forecasts, errors, and feature importances.
+
+    Parameters:
+        df_model (pd.DataFrame): Preprocessed input dataframe with features.
+
+    Returns:
+        tuple:
+            - pd.DataFrame: Raw forecast evaluation metrics (train/test).
+            - pd.DataFrame: Adjusted forecast metrics (test only).
+            - pd.DataFrame: All predictions, actuals, and error terms.
+            - pd.DataFrame: Feature importances from total volume model.
+            - pd.DataFrame: Feature importances from share models by box_type.
+    """
     df_model["week"] = pd.to_datetime(df_model["week"])
     df_model["total_orders"] = df_model.groupby("week")["box_orders"].transform("sum")
     df_model["box_share"] = df_model["box_orders"] / df_model["total_orders"]
