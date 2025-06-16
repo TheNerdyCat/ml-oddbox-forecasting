@@ -43,8 +43,8 @@ def load_and_prepare(path: str) -> pd.DataFrame:
 
     # Output to processed directory with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = f"data/processed/{timestamp}_processed.csv"
-    os.makedirs("data/processed", exist_ok=True)
+    output_path = f"../data/processed/{timestamp}_processed.csv"
+    os.makedirs("../data/processed", exist_ok=True)
     df.to_csv(output_path, index=False)
     print(f"Processed data saved to: {output_path}")
 
