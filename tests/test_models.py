@@ -3,7 +3,10 @@ from oddbox_forecasting.models import (
     train_total_model,
     train_share_models,
     compute_metrics,
+    calculate_event_uplift,
+    apply_adjustment_layer,
 )
+from oddbox_forecasting.config import FORECAST_HORIZON
 import pandas as pd
 
 
@@ -15,10 +18,10 @@ def test_run_baseline_forecasts():
             "box_orders": [80 + i % 5 for i in range(120)],
         }
     )
-    result = run_baseline_forecasts(df, forecast_horizon=4)
+    result = run_baseline_forecasts(df, forecast_horizon=FORECAST_HORIZON)
     assert "A" in result
     assert "rolling_forecast" in result["A"]
-    assert len(result["A"]["rolling_forecast"]) == 4
+    assert len(result["A"]["rolling_forecast"]) == FORECAST_HORIZON
 
 
 def test_train_total_model_runs():
@@ -57,3 +60,34 @@ def test_compute_metrics_shape():
 
     metrics = compute_metrics(df, split_label="test")
     assert "rmse" in metrics.columns
+
+
+def test_calculate_event_uplift_shape():
+    df = pd.DataFrame(
+        {
+            "box_type": ["A"] * 10 + ["B"] * 10,
+            "box_orders": [100] * 5 + [120] * 5 + [90] * 5 + [85] * 5,
+            "is_marketing_week": [0] * 5 + [1] * 5 + [0] * 5 + [1] * 5,
+            "holiday_week": [0] * 10 + [0] * 5 + [1] * 5,
+        }
+    )
+    result = calculate_event_uplift(df)
+    assert {"box_type", "event_type", "uplift"} <= set(result.columns)
+    assert set(result["event_type"]) <= {"marketing", "holiday"}
+
+
+def test_apply_adjustment_layer_modifies_rows():
+    df = pd.DataFrame(
+        {
+            "box_type": ["A", "A"],
+            "is_marketing_week": [1, 0],
+            "holiday_week": [0, 0],
+            "predicted_box_orders": [100.0, 100.0],
+        }
+    )
+    uplift_df = pd.DataFrame(
+        [{"box_type": "A", "event_type": "marketing", "uplift": 0.1}]
+    )
+    out = apply_adjustment_layer(df, uplift_df)
+    assert out.loc[0, "adjusted_prediction"] == 110.0
+    assert out.loc[1, "adjusted_prediction"] == 100.0

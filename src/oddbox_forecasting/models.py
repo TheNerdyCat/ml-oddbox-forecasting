@@ -50,12 +50,14 @@ def run_baseline_forecasts(
     return results
 
 
-def train_total_model(df_total_train: pd.DataFrame) -> lgb.LGBMRegressor:
+def train_total_model(
+    df_total_train: pd.DataFrame,
+) -> tuple[lgb.LGBMRegressor, np.ndarray]:
     X = df_total_train.drop(columns=["week", "total_orders"])
     y = df_total_train["total_orders"]
     model = lgb.LGBMRegressor(n_estimators=100, random_state=42)
     model.fit(X, y)
-    return model
+    return model, model.feature_importances_, X.columns.tolist()
 
 
 def train_share_models(df_model_train: pd.DataFrame, share_features: list[str]) -> dict:
@@ -72,6 +74,7 @@ def train_share_models(df_model_train: pd.DataFrame, share_features: list[str]) 
             "model": model,
             "train_rows": len(X),
             "train_weeks": df_box["week"].nunique(),
+            "feature_importance": model.feature_importances_,
         }
     return models
 
@@ -133,5 +136,71 @@ def compute_metrics(df: pd.DataFrame, split_label: str) -> pd.DataFrame:
             mean_actual=("box_orders", "mean"),
         )
         .assign(mape=lambda d: 100 * d["mae"] / d["mean_actual"], split=split_label)
+        .reset_index()
+    )
+
+
+def calculate_event_uplift(df: pd.DataFrame) -> pd.DataFrame:
+    """Estimate % uplift or dampening effect from events by box_type."""
+    impacts = []
+
+    for box in BOX_TYPES:
+        df_box = df[df["box_type"] == box].copy()
+
+        for col, label in [
+            ("is_marketing_week", "marketing"),
+            ("holiday_week", "holiday"),
+        ]:
+            base = df_box[df_box[col] == 0]["box_orders"]
+            event = df_box[df_box[col] == 1]["box_orders"]
+
+            if len(base) >= 5 and len(event) >= 2:
+                uplift = (event.mean() - base.mean()) / base.mean()
+                impacts.append({"box_type": box, "event_type": label, "uplift": uplift})
+
+    return pd.DataFrame(impacts)
+
+
+def apply_adjustment_layer(df: pd.DataFrame, uplift_df: pd.DataFrame) -> pd.DataFrame:
+    """Apply learned uplift/dampening adjustments to predicted_box_orders."""
+    df = df.copy()
+
+    for _, row in uplift_df.iterrows():
+        mask = df["box_type"] == row["box_type"]
+
+        if row["event_type"] == "marketing":
+            df.loc[mask & (df["is_marketing_week"] == 1), "adjusted_prediction"] = df[
+                "predicted_box_orders"
+            ] * (1 + row["uplift"])
+
+        elif row["event_type"] == "holiday":
+            df.loc[mask & (df["holiday_week"] == 1), "adjusted_prediction"] = df[
+                "predicted_box_orders"
+            ] * (1 + row["uplift"])
+
+    df["adjusted_prediction"] = df["adjusted_prediction"].fillna(
+        df["predicted_box_orders"]
+    )
+    return df
+
+
+def compute_adjusted_metrics(df: pd.DataFrame, split_label: str) -> pd.DataFrame:
+    """Return RMSE/MAE for adjusted vs raw forecasts."""
+    return (
+        df.groupby("box_type")
+        .agg(
+            rmse_model=("squared_error", lambda x: np.sqrt(np.mean(x))),
+            mae_model=("abs_error", "mean"),
+            rmse_baseline=("baseline_squared_error", lambda x: np.sqrt(np.mean(x))),
+            mae_baseline=("baseline_abs_error", "mean"),
+            rmse_adjusted=("adjusted_squared_error", lambda x: np.sqrt(np.mean(x))),
+            mae_adjusted=("adjusted_abs_error", "mean"),
+            mean_actual=("box_orders", "mean"),
+        )
+        .assign(
+            mape_model=lambda d: 100 * d["mae_model"] / d["mean_actual"],
+            mape_adjusted=lambda d: 100 * d["mae_adjusted"] / d["mean_actual"],
+            split=split_label,
+        )
         .reset_index()
     )

@@ -3,7 +3,13 @@ import numpy as np
 from datetime import datetime
 import os
 
-from oddbox_forecasting.config import FEATURE_LAGS, ROLLING_WINDOW
+from oddbox_forecasting.config import (
+    FEATURE_LAGS,
+    ROLLING_WINDOW,
+    TEST_NAME,
+    SHARE_FEATURES,
+    FORECAST_HORIZON,
+)
 from oddbox_forecasting.data_loader import load_raw_data
 from oddbox_forecasting.features import (
     add_lag_features,
@@ -24,6 +30,9 @@ from oddbox_forecasting.models import (
     train_share_models,
     evaluate_share_model,
     compute_metrics,
+    calculate_event_uplift,
+    apply_adjustment_layer,
+    compute_adjusted_metrics,
 )
 
 
@@ -48,9 +57,8 @@ def load_and_prepare(path: str) -> pd.DataFrame:
     df = add_rolling_volatility(df, window=ROLLING_WINDOW)
 
     # Output to processed directory with timestamp
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = f"../data/processed/{timestamp}_processed.csv"
-    os.makedirs("../data/processed", exist_ok=True)
+    output_path = f"data/processed/{TEST_NAME}_processed.csv"
+    os.makedirs("data/processed", exist_ok=True)
     df.to_csv(output_path, index=False)
     print(f"Processed data saved to: {output_path}")
 
@@ -73,8 +81,6 @@ def run_demand_forecast_pipeline(df_model: pd.DataFrame) -> pd.DataFrame:
             is_marketing_week=("is_marketing_week", "first"),
             holiday_week=("holiday_week", "first"),
             is_event_week=("is_event_week", "first"),
-            week_sin=("week_sin", "first"),
-            week_cos=("week_cos", "first"),
         )
         .sort_values("week")
         .reset_index()
@@ -82,26 +88,66 @@ def run_demand_forecast_pipeline(df_model: pd.DataFrame) -> pd.DataFrame:
         .fillna(method="bfill")
     )
 
-    holdout_weeks = df_total["week"].iloc[-4:]
-    df_total["total_pred"] = train_total_model(
+    holdout_weeks = df_total["week"].iloc[-FORECAST_HORIZON:]
+    total_model, total_importance, total_features = train_total_model(
         df_total[~df_total["week"].isin(holdout_weeks)]
-    ).predict(df_total.drop(columns=["week", "total_orders"]))
-
-    share_features = ["week_sin", "week_cos", "is_marketing_week", "holiday_week"]
-    share_models = train_share_models(
-        df_model[~df_model["week"].isin(holdout_weeks)], share_features
     )
+    df_total["total_pred"] = total_model.predict(
+        df_total.drop(columns=["week", "total_orders"])
+    )
+
+    share_models = train_share_models(
+        df_model[~df_model["week"].isin(holdout_weeks)], SHARE_FEATURES
+    )
+
+    # Feature importances as DataFrames
+    total_feat_df = pd.DataFrame(
+        {
+            "feature": total_features,
+            "importance": total_importance,
+        }
+    )
+
+    share_feat_dfs = []
+    for box, model_info in share_models.items():
+        share_feat_dfs.append(
+            pd.DataFrame(
+                {
+                    "box_type": box,
+                    "feature": SHARE_FEATURES,
+                    "importance": model_info["feature_importance"],
+                }
+            )
+        )
+    share_feat_df = pd.concat(share_feat_dfs)
 
     df_all_preds = evaluate_share_model(
-        df_model, df_total, share_models, share_features, holdout_weeks
+        df_model, df_total, share_models, SHARE_FEATURES, holdout_weeks
     )
+
+    # Apply adjustment layer
+    uplift_df = calculate_event_uplift(df_all_preds)
+    df_all_preds = apply_adjustment_layer(df_all_preds, uplift_df)
+
+    # Compute adjustment errors
+    df_all_preds["adjusted_squared_error"] = (
+        df_all_preds["box_orders"] - df_all_preds["adjusted_prediction"]
+    ) ** 2
+    df_all_preds["adjusted_abs_error"] = (
+        df_all_preds["box_orders"] - df_all_preds["adjusted_prediction"]
+    ).abs()
 
     df_train = df_all_preds[~df_all_preds["week"].isin(holdout_weeks)]
     df_test = df_all_preds[df_all_preds["week"].isin(holdout_weeks)]
 
-    return pd.concat(
+    # Combine raw and adjusted metrics
+    raw_metrics = pd.concat(
         [
             compute_metrics(df_train, "train"),
             compute_metrics(df_test, "test"),
         ]
     )
+
+    adj_metrics = compute_adjusted_metrics(df_test, "test_adjusted")
+
+    return raw_metrics, adj_metrics, df_all_preds, total_feat_df, share_feat_df
